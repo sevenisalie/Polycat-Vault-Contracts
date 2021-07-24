@@ -26,10 +26,12 @@ store your key in an environment variable (use a throwaway wallet when testing).
 export PRIVATE_KEY=0xsdoi485jfoq3409t834p3n9jy4tf834iweqior234809
 ``` 
 
-To deploy to mainnet run
+To deploy to mainnet run **will not run yet*
 ``` 
 brownie run scripts/deploy.py --network matic-mainnet
 ``` 
 
 TODO:
 Recreate mocks/mumbai addresses in QuickSwapStrategy.sol for testnet deployment
+
+add constructor arguments to deploy.py
