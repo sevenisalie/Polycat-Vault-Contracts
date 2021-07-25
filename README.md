@@ -18,7 +18,7 @@ brownie compile
 
 Add a new network (matic) to brownie networks config
 ``` 
-brownie networks add matic matic-mainnet host=https://rpc-mainnet.maticvigil.com/v1/4b331c188697971af1cd6f05bb7065bc358b7e89 chainid=137 explorer=https://polygonscan.com/
+brownie networks add matic matic-mainnet host="https://rpc-mainnet.maticvigil.com/v1/4b331c188697971af1cd6f05bb7065bc358b7e89" chainid=137 explorer="https://polygonscan.com/"
 ``` 
 
 store your key in an environment variable (use a throwaway wallet when testing).  By storing it in an env variable and calling it with os.getenv() in python, we are able to prevent exposing our private key in our code.
