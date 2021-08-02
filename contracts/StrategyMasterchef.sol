@@ -23,36 +23,26 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
     address public token0Address;
     address public token1Address;
     address public earnedAddress;
+    uint public sixtynine;
+
     
     address public uniRouterAddress;
-    address public constant usdcAddress = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
-    address public constant fishAddress = 0x3a3Df212b7AA91Aa0402B9035b098891d276572B;
-    address public constant rewardAddress = 0x917FB15E8aAA12264DCBdC15AFef7cD3cE76BA39;
-    address public constant vaultAddress = 0x4879712c5D1A98C0B88Fb700daFF5c65d12Fd729;
-    address public constant feeAddress = 0x1cb757f1eB92F25A917CE9a92ED88c1aC0734334;
-    address public constant withdrawFeeAddress = 0x47231b2EcB18b7724560A78cd7191b121f53FABc;
+   
     address public govAddress;
 
     uint256 public lastEarnBlock = block.number;
     uint256 public sharesTotal = 0;
 
-    address public constant buyBackAddress = 0x000000000000000000000000000000000000dEaD;
-    uint256 public controllerFee = 50;
-    uint256 public rewardRate = 0;
-    uint256 public buyBackRate = 450;
+    uint256 public controllerFee = 50; //used to make earn() pay for itself 0.5%
+    
     uint256 public constant feeMaxTotal = 1000;
     uint256 public constant feeMax = 10000; // 100 = 1%
-
-    uint256 public withdrawFeeFactor = 10000; // 0% withdraw fee
-    uint256 public constant withdrawFeeFactorMax = 10000;
-    uint256 public constant withdrawFeeFactorLL = 9900;
 
     uint256 public slippageFactor = 950; // 5% default slippage tolerance
     uint256 public constant slippageFactorUL = 995;
 
     address[] public earnedToWmaticPath;
-    address[] public earnedToUsdcPath;
-    address[] public earnedToFishPath;
+   
     address[] public earnedToToken0Path;
     address[] public earnedToToken1Path;
     address[] public token0ToEarnedPath;
@@ -66,8 +56,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         address _wantAddress,
         address _earnedAddress,
         address[] memory _earnedToWmaticPath,
-        address[] memory _earnedToUsdcPath,
-        address[] memory _earnedToFishPath,
         address[] memory _earnedToToken0Path,
         address[] memory _earnedToToken1Path,
         address[] memory _token0ToEarnedPath,
@@ -86,12 +74,11 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         earnedAddress = _earnedAddress;
 
         earnedToWmaticPath = _earnedToWmaticPath;
-        earnedToUsdcPath = _earnedToUsdcPath;
-        earnedToFishPath = _earnedToFishPath;
         earnedToToken0Path = _earnedToToken0Path;
         earnedToToken1Path = _earnedToToken1Path;
         token0ToEarnedPath = _token0ToEarnedPath;
         token1ToEarnedPath = _token1ToEarnedPath;
+        sixtynine = 69;
 
         transferOwnership(vaultChefAddress);
         
@@ -100,9 +87,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
     
     event SetSettings(
         uint256 _controllerFee,
-        uint256 _rewardRate,
-        uint256 _buyBackRate,
-        uint256 _withdrawFeeFactor,
         uint256 _slippageFactor,
         address _uniRouterAddress
     );
@@ -167,14 +151,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             sharesRemoved = sharesTotal;
         }
         sharesTotal = sharesTotal.sub(sharesRemoved);
-        
-        // Withdraw fee
-        uint256 withdrawFee = _wantAmt
-            .mul(withdrawFeeFactorMax.sub(withdrawFeeFactor))
-            .div(withdrawFeeFactorMax);
-        IERC20(wantAddress).safeTransfer(vaultAddress, withdrawFee);
-        
-        _wantAmt = _wantAmt.sub(withdrawFee);
 
         IERC20(wantAddress).safeTransfer(vaultChefAddress, _wantAmt);
 
@@ -188,10 +164,10 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         // Converts farm tokens into want tokens
         uint256 earnedAmt = IERC20(earnedAddress).balanceOf(address(this));
 
+
+        //broke the fee functions here, only left the one that swaps matic to pay for gas.
         if (earnedAmt > 0) {
             earnedAmt = distributeFees(earnedAmt);
-            earnedAmt = distributeRewards(earnedAmt);
-            earnedAmt = buyBack(earnedAmt);
     
             if (earnedAddress != token0Address) {
                 // Swap half earned to token0
@@ -236,12 +212,13 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
     // To pay for earn function
     function distributeFees(uint256 _earnedAmt) internal returns (uint256) {
         if (controllerFee > 0) {
-            uint256 fee = _earnedAmt.mul(controllerFee).div(feeMax);
-    
+            uint256 fee = _earnedAmt.mul(controllerFee).div(feeMax); // this is 50 basis points by default, 0.5%
+
+            //need to change this to and make a _safeSwapMatic()
             _safeSwapWmatic(
                 fee,
                 earnedToWmaticPath,
-                feeAddress
+                address(this) 
             );
             
             _earnedAmt = _earnedAmt.sub(fee);
@@ -250,43 +227,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         return _earnedAmt;
     }
 
-    function distributeRewards(uint256 _earnedAmt) internal returns (uint256) {
-        if (rewardRate > 0) {
-            uint256 fee = _earnedAmt.mul(rewardRate).div(feeMax);
-    
-            uint256 usdcBefore = IERC20(usdcAddress).balanceOf(address(this));
-            
-            _safeSwap(
-                fee,
-                earnedToUsdcPath,
-                address(this)
-            );
-            
-            uint256 usdcAfter = IERC20(usdcAddress).balanceOf(address(this)).sub(usdcBefore);
-            
-            IStrategyFish(rewardAddress).depositReward(usdcAfter);
-            
-            _earnedAmt = _earnedAmt.sub(fee);
-        }
-
-        return _earnedAmt;
-    }
-
-    function buyBack(uint256 _earnedAmt) internal returns (uint256) {
-        if (buyBackRate > 0) {
-            uint256 buyBackAmt = _earnedAmt.mul(buyBackRate).div(feeMax);
-    
-            _safeSwap(
-                buyBackAmt,
-                earnedToFishPath,
-                buyBackAddress
-            );
-
-            _earnedAmt = _earnedAmt.sub(buyBackAmt);
-        }
-        
-        return _earnedAmt;
-    }
 
     function convertDustToEarned() external nonReentrant whenNotPaused {
         // Converts dust tokens into earned tokens, which will be reinvested on the next earn().
@@ -309,7 +249,7 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             _safeSwap(
                 token1Amt,
                 token1ToEarnedPath,
-                address(this)
+                govAddress
             );
         }
     }
@@ -360,12 +300,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             uniRouterAddress,
             uint256(-1)
         );
-
-        IERC20(usdcAddress).safeApprove(rewardAddress, uint256(0));
-        IERC20(usdcAddress).safeIncreaseAllowance(
-            rewardAddress,
-            uint256(-1)
-        );
     }
 
     function resetAllowances() external onlyGov {
@@ -384,28 +318,18 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
     
     function setSettings(
         uint256 _controllerFee,
-        uint256 _rewardRate,
-        uint256 _buyBackRate,
-        uint256 _withdrawFeeFactor,
         uint256 _slippageFactor,
         address _uniRouterAddress
     ) external onlyGov {
-        require(_controllerFee.add(_rewardRate).add(_buyBackRate) <= feeMaxTotal, "Max fee of 10%");
-        require(_withdrawFeeFactor >= withdrawFeeFactorLL, "_withdrawFeeFactor too low");
-        require(_withdrawFeeFactor <= withdrawFeeFactorMax, "_withdrawFeeFactor too high");
+        require(_controllerFee <= feeMaxTotal, "Max fee of 10%");
         require(_slippageFactor <= slippageFactorUL, "_slippageFactor too high");
+
         controllerFee = _controllerFee;
-        rewardRate = _rewardRate;
-        buyBackRate = _buyBackRate;
-        withdrawFeeFactor = _withdrawFeeFactor;
         slippageFactor = _slippageFactor;
         uniRouterAddress = _uniRouterAddress;
 
         emit SetSettings(
             _controllerFee,
-            _rewardRate,
-            _buyBackRate,
-            _withdrawFeeFactor,
             _slippageFactor,
             _uniRouterAddress
         );
@@ -447,5 +371,11 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             _to,
             now.add(600)
         );
+    }
+    //needed to accept ether
+    event Received(address sender, uint amount);
+
+    receive() external payable {
+        emit Received(msg.sender, msg.value);
     }
 }

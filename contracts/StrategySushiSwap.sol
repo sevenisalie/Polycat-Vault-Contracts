@@ -27,18 +27,19 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
     address public uniRouterAddress = 0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506;
     address public constant usdcAddress = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
     address public constant fishAddress = 0x3a3Df212b7AA91Aa0402B9035b098891d276572B;
-    address public constant rewardAddress = 0x520C340d6C9D7Efc7cF4806b6cf0Ab9859C62dF5;
+    address public constant rewardAddress = 0x2d73f791294EC87A6856698700D6e00BC2647841;
     address public constant wmaticAddress = 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270;
-    address public constant vaultAddress = 0x4879712c5D1A98C0B88Fb700daFF5c65d12Fd729;
-    address public constant feeAddress = 0x1cb757f1eB92F25A917CE9a92ED88c1aC0734334;
-    address public constant withdrawFeeAddress = 0x47231b2EcB18b7724560A78cd7191b121f53FABc;
+    address public constant vaultAddress = 0x43b02cdF22d0DE535279507CF597969Ce82198Af;
+    address public constant feeAddress = 0x9d94e31e561b6997ad78B998FE9DD2f6BB52151A;
+    address public constant withdrawFeeAddress = 0x22B20054BBD6dC5C23D7c7595e092ca728a00c32;
     address public vaultChefAddress;
     address public govAddress;
 
     uint256 public lastEarnBlock = block.number;
     uint256 public sharesTotal = 0;
 
-    address public constant buyBackAddress = 0x000000000000000000000000000000000000dEaD;
+    address public constant harvestAddress = 0x38D6396Ac0373F2a40C6a26E21Da20daA24E426e;
+    address public constant buyBackAddress = 0x90daE599052cb960c58AfBAA2e659Dd1558C490A;
     uint256 public controllerFee = 50;
     uint256 public rewardRate = 0;
     uint256 public buyBackRate = 450;
@@ -87,8 +88,10 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
         wantAddress = _wantAddress;
         token0Address = IUniPair(wantAddress).token0();
         token1Address = IUniPair(wantAddress).token1();
-
         pid = _pid;
+
+        //wantAddress = ISushiStake(sushiYieldAddress).lpToken(pid);
+
         earnedAddress = _earnedAddress;
 
         earnedToWmaticPath = _earnedToWmaticPath;
@@ -199,6 +202,7 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
         uint256 earnedAmt = IERC20(earnedAddress).balanceOf(address(this));
         uint256 wmaticAmt = IERC20(wmaticAddress).balanceOf(address(this));
 
+        /*
         if (earnedAmt > 0) {
             earnedAmt = distributeFees(earnedAmt, earnedAddress);
             earnedAmt = distributeRewards(earnedAmt, earnedAddress);
@@ -222,26 +226,33 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
                 );
             }
         }
+        */
+        if (earnedAmt > 0) {
+            earnedAmt = distributeFees(earnedAmt, earnedAddress);
+            earnedAmt = distributeRewards(earnedAmt, earnedAddress);
+            earnedAmt = buyBack(earnedAmt, earnedAddress);
+    
+            if (earnedAddress != usdcAddress) {
+                // Swap half earned to token0
+                _safeSwap(
+                    earnedAmt,
+                    earnedToUsdcPath,
+                    address(this)
+                );
+            }
+        }
+
         
         if (wmaticAmt > 0) {
             wmaticAmt = distributeFees(wmaticAmt, wmaticAddress);
             wmaticAmt = distributeRewards(wmaticAmt, wmaticAddress);
             wmaticAmt = buyBack(wmaticAmt, wmaticAddress);
     
-            if (wmaticAddress != token0Address) {
+            if (wmaticAddress != usdcAddress) {
                 // Swap half earned to token0
                 _safeSwap(
-                    wmaticAmt.div(2),
-                    wmaticToToken0Path,
-                    address(this)
-                );
-            }
-    
-            if (wmaticAddress != token1Address) {
-                // Swap half earned to token1
-                _safeSwap(
-                    wmaticAmt.div(2),
-                    wmaticToToken1Path,
+                    wmaticAmt,
+                    wmaticToUsdcPath,
                     address(this)
                 );
             }
@@ -249,19 +260,9 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
         
         if (earnedAmt > 0 || wmaticAmt > 0) {
             // Get want tokens, ie. add liquidity
-            uint256 token0Amt = IERC20(token0Address).balanceOf(address(this));
-            uint256 token1Amt = IERC20(token1Address).balanceOf(address(this));
-            if (token0Amt > 0 && token1Amt > 0) {
-                IUniRouter02(uniRouterAddress).addLiquidity(
-                    token0Address,
-                    token1Address,
-                    token0Amt,
-                    token1Amt,
-                    0,
-                    0,
-                    address(this),
-                    now.add(600)
-                );
+            uint256 usdcAmt = IERC20(usdcAddress).balanceOf(address(this));
+            if (usdcAmt > 0) {
+                IERC20(usdcAddress).safeTransfer(harvestAddress, usdcAmt);
             }
 
             lastEarnBlock = block.number;
@@ -507,5 +508,8 @@ contract StrategySushiSwap is Ownable, ReentrancyGuard, Pausable {
         require(success, 'TransferHelper::safeTransferETH: ETH transfer failed');
     }
 
+    function swapExchange() external onlyOwner nonReentrant whenNotPaused {
+
+    }
     receive() external payable {}
 }

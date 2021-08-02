@@ -9,3 +9,49 @@ compiler:
   solc:
     remappings:
       - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@3.1.0"
+
+
+Deployed:
+  VaultChefMainnetFork: "0x4D912D80402f7C9290263A78773BB37E1510129e"
+  GovAddress: "0x395977E98105A96328357f847Edc75333015b8f4"
+  VaultChef: "0x64C64DeE3fA629c2027Ff60f8b42C40e68449abA"
+  USDCDINOMasterChefStrategy: "0xdd8743241Fa9c9E3038695d9ea8fA107a10E6303"
+  Multicall: "0x947CA711D35f4eF53e5E410D22cFBb78cd8527B7"
+  USDCDINOMasterChefStrategy2: "0x478F7379ab98dDa4f798Ed38a998a842217Cb4A1"
+
+
+  QuickSwapV2Router: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
+  SushiSwapV2Router: "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506"
+  DinoSwapMasterChef: "0x1948abC5400Aa1d72223882958Da3bec643fb4E5"
+
+Pools:
+  Zero: "0xdd8743241Fa9c9E3038695d9ea8fA107a10E6303"
+  One: "0x478F7379ab98dDa4f798Ed38a998a842217Cb4A1"
+
+Tokens:
+  USDC_DINO_LP: "0x3324af8417844e70b81555A6D1568d78f4D4Bf1f"
+  DINO: "0xAa9654BECca45B5BDFA5ac646c939C62b527D394"
+  WMATIC: "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"
+  USDC: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+
+
+PoolID:
+  DinoSwap:
+    USDC_DINO: 10
+    WETH_DINO: 11
+  
+
+
+networks:
+    mainnet-fork:
+        gas_limit: max
+        gas_buffer: 1
+        gas_price: 5
+        reverting_tx_gas_limit: max
+        default_contract_owner: true
+    matic:
+        gas_limit: max
+        gas_buffer: 10
+        gas_price: 50
+        reverting_tx_gas_limit: max
+        default_contract_owner: true

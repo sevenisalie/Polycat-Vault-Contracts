@@ -32,16 +32,16 @@ contract StrategyAave is Ownable, ReentrancyGuard, Pausable {
     address public constant usdcAddress = 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174;
     address public constant fishAddress = 0x3a3Df212b7AA91Aa0402B9035b098891d276572B;
     address public rewardAddress = 0x917FB15E8aAA12264DCBdC15AFef7cD3cE76BA39;
-    address public constant vaultAddress = 0x4879712c5D1A98C0B88Fb700daFF5c65d12Fd729;
-    address public constant feeAddress = 0x1cb757f1eB92F25A917CE9a92ED88c1aC0734334;
-    address public constant withdrawFeeAddress = 0x47231b2EcB18b7724560A78cd7191b121f53FABc;
+    address public constant vaultAddress = 0x43b02cdF22d0DE535279507CF597969Ce82198Af;
+    address public constant feeAddress = 0x9d94e31e561b6997ad78B998FE9DD2f6BB52151A;
+    address public constant withdrawFeeAddress = 0x22B20054BBD6dC5C23D7c7595e092ca728a00c32;
     address public vaultChefAddress;
     address public govAddress;
 
     uint256 public lastEarnBlock = block.number;
     uint256 public sharesTotal = 0;
 
-    address public constant buyBackAddress = 0x000000000000000000000000000000000000dEaD;
+    address public constant buyBackAddress = 0x90daE599052cb960c58AfBAA2e659Dd1558C490A;
     uint256 public controllerFee = 50;
     uint256 public rewardRate = 0;
     uint256 public buyBackRate = 450;
