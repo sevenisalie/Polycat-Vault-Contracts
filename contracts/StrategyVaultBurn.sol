@@ -33,7 +33,7 @@ contract StrategyVaultBurn is Ownable, ReentrancyGuard, Pausable {
     uint256 public lastEarnBlock = block.timestamp;
     uint256 public sharesTotal = 0;
 
-    address public constant buyBackAddress = 0x000000000000000000000000000000000000dEaD;
+    address public constant buyBackAddress = 0x90daE599052cb960c58AfBAA2e659Dd1558C490A;
 
     uint256 public slippageFactor = 950; // 5% default slippage tolerance
     uint256 public constant slippageFactorUL = 995;
