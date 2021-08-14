@@ -7,21 +7,20 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import "../interfaces/IMasterchef.sol";
-import "../interfaces/IStrategyFish.sol";
-import "../interfaces/IUniPair.sol";
-import "../interfaces/IUniRouter02.sol";
+import "../../interfaces/IMasterchef.sol";
+import "../../interfaces/IStrategyFish.sol";
+import "../../interfaces/IUniPair.sol";
+import "../../interfaces/IUniRouter02.sol";
 
-contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
+contract StrategyShortDinochef is Ownable, ReentrancyGuard, Pausable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
-
+    address public WETH; //or wmatic or w/e ya know? but round these parts we call it weth.
     address public vaultChefAddress;
     address public masterchefAddress;
     uint256 public pid;
     address public wantAddress;
-    address public token0Address;
-    address public token1Address;
+    address public newWantAddress; //what we will sell earned rewards for
     address public earnedAddress;
     uint public sixtynine;
 
@@ -35,49 +34,44 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
 
     uint256 public controllerFee = 50; //used to make earn() pay for itself 0.5%
     
-    uint256 public constant feeMaxTotal = 1000; //basically make sure that you dont have more than 1000 basis points of fees
+    uint256 public constant feeMaxTotal = 1000; //basically make sure that you dont have more than 1000 basis points of fees total, aka 10%
     uint256 public constant feeMax = 10000; // 100 = 1%
 
     uint256 public slippageFactor = 950; // 5% default slippage tolerance
     uint256 public constant slippageFactorUL = 995;
 
+    //trade pathing
     address[] public earnedToWmaticPath;
-   
-    address[] public earnedToToken0Path;
-    address[] public earnedToToken1Path;
-    address[] public token0ToEarnedPath;
-    address[] public token1ToEarnedPath;
+    address[] public earnedToNewWantPath;
+  
 
     constructor(
+        address _WETH,
         address _vaultChefAddress,
         address _masterchefAddress,
         address _uniRouterAddress,
         uint256 _pid,
         address _wantAddress,
+        address _newWantAddress,
         address _earnedAddress,
         address[] memory _earnedToWmaticPath,
-        address[] memory _earnedToToken0Path,
-        address[] memory _earnedToToken1Path,
-        address[] memory _token0ToEarnedPath,
-        address[] memory _token1ToEarnedPath
+        address[] memory _earnedToNewWantPath
     ) public {
         govAddress = msg.sender;
         vaultChefAddress = _vaultChefAddress;
         masterchefAddress = _masterchefAddress;
         uniRouterAddress = _uniRouterAddress;
+        WETH = _WETH;
 
         wantAddress = _wantAddress;
-        token0Address = IUniPair(wantAddress).token0();
-        token1Address = IUniPair(wantAddress).token1();
+        newWantAddress =_newWantAddress;
+  
 
         pid = _pid;
         earnedAddress = _earnedAddress;
 
         earnedToWmaticPath = _earnedToWmaticPath;
-        earnedToToken0Path = _earnedToToken0Path;
-        earnedToToken1Path = _earnedToToken1Path;
-        token0ToEarnedPath = _token0ToEarnedPath;
-        token1ToEarnedPath = _token1ToEarnedPath;
+        earnedToNewWantPath = _earnedToNewWantPath;
         sixtynine = 69;
 
         transferOwnership(vaultChefAddress);
@@ -157,11 +151,32 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         return sharesRemoved;
     }
 
-    function earn() external nonReentrant whenNotPaused onlyGov {
-        // Harvest farm tokens
+function harvest(address _userAddress, uint256 _bonusAmt) external onlyOwner nonReentrant returns (uint256) {
+        require(_bonusAmt > 0, "_wantAmt is 0");
         
-        uint256 harvestable = IMasterchef(masterchefAddress).pendingDino(pid, address(this)).sub(10);
-        IMasterchef(masterchefAddress).withdraw(pid, harvestable);
+        uint256 newWantAmt = IERC20(newWantAddress).balanceOf(address(this));
+        
+
+        if (_bonusAmt > newWantAmt) {
+            _bonusAmt = newWantAmt;
+        }
+
+        uint256 bonusBefore = bonusWantLockedTotal();
+        IERC20(newWantAddress).safeTransfer(vaultChefAddress, _bonusAmt);
+        uint256 bonusAfter = bonusWantLockedTotal();
+
+        return bonusBefore.sub(bonusAfter);
+    }
+
+
+    function earn() external nonReentrant whenNotPaused onlyGov {
+        // Harvest farm tokens (dino makes you withdraw the whole LP *shrugs all around boys*)
+        uint256 totalWithdraw;
+        uint256 rewardDebt;
+        (totalWithdraw, rewardDebt) = IMasterchef(masterchefAddress).userInfo(pid, address(this));
+        
+        
+        IMasterchef(masterchefAddress).withdraw(pid, totalWithdraw);
 
         // Converts farm tokens into want tokens
         uint256 earnedAmt = IERC20(earnedAddress).balanceOf(address(this));
@@ -171,39 +186,17 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         if (earnedAmt > 0) {
             earnedAmt = distributeFees(earnedAmt);
     
-            if (earnedAddress != token0Address) {
-                // Swap half earned to token0
-                _safeSwap(
-                    earnedAmt.div(2),
-                    earnedToToken0Path,
-                    address(this)
-                );
-            }
+
+            // Swap earned to bonusWant
+            _safeSwap(
+                earnedAddress,
+                newWantAddress,
+                earnedAmt,
+                address(this)
+            );
+
+
     
-            if (earnedAddress != token1Address) {
-                // Swap half earned to token1
-                _safeSwap(
-                    earnedAmt.div(2),
-                    earnedToToken1Path,
-                    address(this)
-                );
-            }
-    
-            // Get want tokens, ie. add liquidity
-            uint256 token0Amt = IERC20(token0Address).balanceOf(address(this));
-            uint256 token1Amt = IERC20(token1Address).balanceOf(address(this));
-            if (token0Amt > 0 && token1Amt > 0) {
-                IUniRouter02(uniRouterAddress).addLiquidity(
-                    token0Address,
-                    token1Address,
-                    token0Amt,
-                    token1Amt,
-                    0,
-                    0,
-                    address(this),
-                    now.add(600)
-                );
-            }
     
             lastEarnBlock = block.number;
     
@@ -220,7 +213,7 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             _safeSwapWmatic(
                 fee,
                 earnedToWmaticPath,
-                address(this) 
+                govAddress 
             );
             
             _earnedAmt = _earnedAmt.sub(fee);
@@ -229,32 +222,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         return _earnedAmt;
     }
 
-
-    function convertDustToEarned() external nonReentrant whenNotPaused {
-        // Converts dust tokens into earned tokens, which will be reinvested on the next earn().
-
-        // Converts token0 dust (if any) to earned tokens
-        uint256 token0Amt = IERC20(token0Address).balanceOf(address(this));
-        if (token0Amt > 0 && token0Address != earnedAddress) {
-            // Swap all dust tokens to earned tokens
-            _safeSwap(
-                token0Amt,
-                token0ToEarnedPath,
-                address(this)
-            );
-        }
-
-        // Converts token1 dust (if any) to earned tokens
-        uint256 token1Amt = IERC20(token1Address).balanceOf(address(this));
-        if (token1Amt > 0 && token1Address != earnedAddress) {
-            // Swap all dust tokens to earned tokens
-            _safeSwap(
-                token1Amt,
-                token1ToEarnedPath,
-                govAddress
-            );
-        }
-    }
 
     // Emergency!!
     function pause() external onlyGov {
@@ -278,6 +245,14 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             .add(vaultSharesTotal());
     }
 
+    function bonusWantLockedTotal() public view returns (uint256) {
+        return IERC20(newWantAddress).balanceOf(address(this));
+    }
+
+    function bonusWantAddress() public view returns (address) {
+        return newWantAddress;
+    }
+
     function _resetAllowances() internal {
         IERC20(wantAddress).safeApprove(masterchefAddress, uint256(0));
         IERC20(wantAddress).safeIncreaseAllowance(
@@ -287,18 +262,6 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
 
         IERC20(earnedAddress).safeApprove(uniRouterAddress, uint256(0));
         IERC20(earnedAddress).safeIncreaseAllowance(
-            uniRouterAddress,
-            uint256(-1)
-        );
-
-        IERC20(token0Address).safeApprove(uniRouterAddress, uint256(0));
-        IERC20(token0Address).safeIncreaseAllowance(
-            uniRouterAddress,
-            uint256(-1)
-        );
-
-        IERC20(token1Address).safeApprove(uniRouterAddress, uint256(0));
-        IERC20(token1Address).safeIncreaseAllowance(
             uniRouterAddress,
             uint256(-1)
         );
@@ -341,11 +304,26 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         govAddress = _govAddress;
     }
     
+    function _findPath(address _tokenIn, address _tokenOut) public returns (address[] memory _path) {
+        address[] memory path;
+        path = new address[](3);
+        path[0] = _tokenIn;
+        path[1] = WETH;
+        path[2] = _tokenOut;
+        return path;
+    }
+
     function _safeSwap(
+        address _tokenIn,
+        address _tokenOut,
         uint256 _amountIn,
-        address[] memory _path,
         address _to
     ) internal {
+
+        address[] memory _path = _findPath(_tokenIn, _tokenOut);
+
+
+
         uint256[] memory amounts = IUniRouter02(uniRouterAddress).getAmountsOut(_amountIn, _path);
         uint256 amountOut = amounts[amounts.length.sub(1)];
 
@@ -354,9 +332,11 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
             amountOut.mul(slippageFactor).div(1000),
             _path,
             _to,
-            now.add(600)
+            block.timestamp.add(600)
         );
     }
+
+
     
     function _safeSwapWmatic(
         uint256 _amountIn,
@@ -364,7 +344,7 @@ contract StrategyMasterchef is Ownable, ReentrancyGuard, Pausable {
         address _to
     ) internal {
         uint256[] memory amounts = IUniRouter02(uniRouterAddress).getAmountsOut(_amountIn, _path);
-        uint256 amountOut = amounts[amounts.length.sub(1)];
+        uint256 amountOut = amounts[amounts.length.sub(2)]; //change back to .sub(1)
 
         IUniRouter02(uniRouterAddress).swapExactTokensForETH(
             _amountIn,

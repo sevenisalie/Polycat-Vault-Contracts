@@ -12,4 +12,6 @@ interface ISushiStake {
     function harvest(uint256 pid, address to) external;
     
     function userInfo(uint256 _pid, address _user) external view returns (uint256, uint256);
+
+    function lpToken(uint256 _pid) external view returns (address);
 }
