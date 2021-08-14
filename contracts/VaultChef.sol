@@ -66,6 +66,18 @@ contract VaultChef is Ownable, ReentrancyGuard, Operators {
         return user.shares.mul(wantLockedTotal).div(sharesTotal);
     }
 
+    function stakedBonusTokens(uint256 _pid, address _user) external view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][_user];
+
+        uint256 sharesTotal = IStrategy(pool.strat).sharesTotal();
+        uint256 bonusLockedTotal = IStrategy(poolInfo[_pid].strat).bonusWantLockedTotal();
+        if (sharesTotal == 0) {
+            return 0; 
+        }
+        return user.shares.mul(bonusLockedTotal).div(sharesTotal);
+    }
+
     // Want tokens moved from user -> this -> Strat (compounding)
     function deposit(uint256 _pid, uint256 _wantAmt) external nonReentrant {
         _deposit(_pid, _wantAmt, msg.sender);
@@ -104,18 +116,28 @@ contract VaultChef is Ownable, ReentrancyGuard, Operators {
         UserInfo storage user = userInfo[_pid][msg.sender];
 
         uint256 wantLockedTotal = IStrategy(poolInfo[_pid].strat).wantLockedTotal();
+        uint256 bonusWantLockedTotal = IStrategy(poolInfo[_pid].strat).bonusWantLockedTotal(); //make this function in Strategy
         uint256 sharesTotal = IStrategy(poolInfo[_pid].strat).sharesTotal();
+        address bonusWantAddress = IStrategy(poolInfo[_pid].strat).bonusWantAddress();
 
         require(user.shares > 0, "user.shares is 0");
         require(sharesTotal > 0, "sharesTotal is 0");
+
+
 
         // Withdraw want tokens
         uint256 amount = user.shares.mul(wantLockedTotal).div(sharesTotal);
         if (_wantAmt > amount) {
             _wantAmt = amount;
+    
         }
+  
         if (_wantAmt > 0) {
             uint256 sharesRemoved = IStrategy(poolInfo[_pid].strat).withdraw(msg.sender, _wantAmt);
+
+            // sharesremoved *bonusWantLocked / sharesTotal
+            uint256 bonusAmountWithdraw = sharesRemoved.mul(bonusWantLockedTotal).div(sharesTotal);
+            uint256 bonusRemoved = IStrategy(poolInfo[_pid].strat).harvest(msg.sender, bonusAmountWithdraw);
 
             if (sharesRemoved > user.shares) {
                 user.shares = 0;
@@ -124,12 +146,19 @@ contract VaultChef is Ownable, ReentrancyGuard, Operators {
             }
 
             uint256 wantBal = IERC20(pool.want).balanceOf(address(this));
+        
             if (wantBal < _wantAmt) {
                 _wantAmt = wantBal;
             }
+
+          
+
+            IERC20(bonusWantAddress).safeTransfer(_to, bonusAmountWithdraw);
             pool.want.safeTransfer(_to, _wantAmt);
+            emit Withdraw(msg.sender, _pid, bonusAmountWithdraw);
         }
         emit Withdraw(msg.sender, _pid, _wantAmt);
+        
     }
 
     // Withdraw everything from pool for yourself

@@ -10,6 +10,9 @@ interface IStrategy {
     // Total want tokens managed by strategy
     function wantLockedTotal() external view returns (uint256);
 
+    //total bonus want tokens managed by strategy
+    function bonusWantLockedTotal() external view returns (uint256);
+
     // Sum of all shares of users to wantLockedTotal
     function sharesTotal() external view returns (uint256);
 
@@ -21,4 +24,10 @@ interface IStrategy {
 
     // Transfer want tokens strategy -> vaultChef
     function withdraw(address _userAddress, uint256 _wantAmt) external returns (uint256);
+
+    //Transfer bonus tokens strategy -> vaultChef
+    function harvest(address _userAddress, uint256 _bonusAmt) external returns (uint256);
+
+    //returns bonusWant Address
+    function bonusWantAddress() external view returns (address);
 }

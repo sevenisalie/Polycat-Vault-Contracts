@@ -10,4 +10,6 @@ interface IMasterchef {
     function emergencyWithdraw(uint256 _pid) external;
     
     function userInfo(uint256 _pid, address _address) external view returns (uint256, uint256);
+
+    function pendingDino(uint256 _pid, address _address) external view returns (uint256);
 }
